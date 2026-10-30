@@ -63,4 +63,4 @@ class Settings:
     @property
     def vector_dir(self) -> Path:
         """Return the configured vector directory or its data-local default."""
-        return self.vector_path or self.data_dir / "vectors"
+        return (self.vector_path or self.data_dir / "vectors").resolve()
