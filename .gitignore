@@ -23,6 +23,7 @@ hf_cache/
 !.env.example
 
 # Editor and operating-system files
+.worktrees/
 .vscode/
 .DS_Store
 Thumbs.db
