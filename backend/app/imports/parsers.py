@@ -95,6 +95,15 @@ def parse_import(
     return _parse_text(text)
 
 
+def inspect_csv_columns(content: bytes) -> tuple[str, ...]:
+    """Read a CSV header so the UI can request the required column mapping."""
+    if not content or not content.strip():
+        raise ImportParseError("empty_file", "فایل خالی است.")
+    text = _decode_text(content, allow_windows_csv=True)
+    reader = csv.reader(io.StringIO(text, newline=""))
+    return _validated_columns(next(reader, []))
+
+
 def _decode_text(content: bytes, *, allow_windows_csv: bool) -> str:
     try:
         return content.decode("utf-8-sig")
@@ -116,13 +125,10 @@ def _parse_csv(text: str, mapping: CsvColumnMapping | None) -> ParsedImport:
         )
 
     reader = csv.DictReader(io.StringIO(text, newline=""))
-    raw_columns = reader.fieldnames or []
-    if not raw_columns or any(not column or not column.strip() for column in raw_columns):
+    columns = _validated_columns(reader.fieldnames or [])
+    if not columns:
         raise ImportParseError("invalid_csv_headers", "سطر نخست CSV باید نام ستون‌ها را داشته باشد.")
-    columns = tuple(column.strip() for column in raw_columns)
-    if len(columns) != len(set(columns)):
-        raise ImportParseError("duplicate_csv_headers", "نام ستون‌های CSV باید یکتا باشد.")
-
+    reader.fieldnames = list(columns)
     selected = {
         "question": mapping.question,
         "answer": mapping.answer,
@@ -169,6 +175,15 @@ def _parse_csv(text: str, mapping: CsvColumnMapping | None) -> ParsedImport:
 
     _require_records(records)
     return ParsedImport(format="csv", columns=columns, records=tuple(records))
+
+
+def _validated_columns(raw_columns: list[str | None]) -> tuple[str, ...]:
+    if not raw_columns or any(not column or not column.strip() for column in raw_columns):
+        raise ImportParseError("invalid_csv_headers", "سطر نخست CSV باید نام ستون‌ها را داشته باشد.")
+    columns = tuple(column.strip() for column in raw_columns if column is not None)
+    if len(columns) != len(set(columns)):
+        raise ImportParseError("duplicate_csv_headers", "نام ستون‌های CSV باید یکتا باشد.")
+    return columns
 
 
 def _parse_json(text: str) -> ParsedImport:

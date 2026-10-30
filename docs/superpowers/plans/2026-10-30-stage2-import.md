@@ -58,7 +58,7 @@
 - [x] Implement the normalized parser with UTF-8/UTF-8 BOM decoding, strict schema validation, ordered messages, and no guessed metadata.
 - [x] Add three small synthetic Persian sample files and document their exact schemas and upload limits in Persian.
 - [x] Rerun parser tests; require all focused tests to pass.
-- [ ] Commit as `feat: add Persian support import formats`.
+- [x] Commit as `feat: add Persian support import formats`.
 
 ### Task 2: Persist and manage imported sources
 
@@ -79,12 +79,13 @@
 - `GET /api/sources` lists sources; `GET /api/sources/{source_id}` returns details plus a bounded record preview.
 - `POST /api/sources/{source_id}/retry` reprocesses the stored original upload; `DELETE /api/sources/{source_id}` removes its records and upload.
 
-- [ ] Add failing tests for preview-without-persistence, source import/detail/list, duplicate detection, unsupported/oversized uploads, interrupted-import recovery, retry, and deletion cleanup.
-- [ ] Run `python -m uv run --project . pytest tests/test_sources.py -q` and confirm expected failures before implementation.
-- [ ] Add an additive SQLite migration for sources and records, foreign-key cleanup, state recovery, and SHA-256 canonical-content uniqueness.
-- [ ] Add multipart upload handling, persistent upload storage, preview/import/source/retry/delete routes, and structured validation errors.
-- [ ] Add and lock `python-multipart`; configure the existing Compose uploads volume and local environment path.
-- [ ] Run source API tests and backend Ruff; require all passing.
+- [x] Add and lock `python-multipart` as the prerequisite for multipart API tests.
+- [x] Add failing tests for preview-without-persistence, source import/detail/list, duplicate detection, unsupported/oversized uploads, interrupted-import recovery, retry, and deletion cleanup.
+- [x] Run `python -m uv run --project . pytest tests/test_sources.py -q` and confirm expected failures before implementation.
+- [x] Add an additive SQLite migration for sources and records, foreign-key cleanup, state recovery, and SHA-256 canonical-content uniqueness.
+- [x] Add multipart upload handling, persistent upload storage, preview/import/source/retry/delete routes, and structured validation errors.
+- [x] Configure the existing Compose uploads volume and local environment path.
+- [x] Run source API tests and backend Ruff; require all passing.
 - [ ] Commit as `feat: persist and manage support sources`.
 
 ### Task 3: Build the Persian knowledge import and inspection UI

@@ -9,6 +9,7 @@ from app.imports.parsers import (
     CsvColumnMapping,
     ImportParseError,
     Message,
+    inspect_csv_columns,
     parse_import,
 )
 
@@ -155,6 +156,24 @@ def test_rejects_empty_malformed_or_unsupported_input(
 
     assert error.value.code == code
     assert error.value.message
+
+
+def test_inspects_csv_columns_before_the_user_maps_them() -> None:
+    content = "شناسه,پرسش,پاسخ\n".encode("utf-8-sig")
+
+    assert inspect_csv_columns(content) == ("شناسه", "پرسش", "پاسخ")
+
+
+def test_csv_mapping_uses_trimmed_header_names() -> None:
+    content = " پرسش مشتری , پاسخ پشتیبانی \nسؤال نمونه,پاسخ نمونه\n".encode("utf-8")
+    mapping = CsvColumnMapping(question="پرسش مشتری", answer="پاسخ پشتیبانی")
+
+    result = parse_import("support.csv", content, mapping)
+
+    assert result.records[0].messages == (
+        Message(role="customer", content="سؤال نمونه"),
+        Message(role="support", content="پاسخ نمونه"),
+    )
 
 
 def test_rejects_json_records_without_a_question_answer_pair() -> None:
