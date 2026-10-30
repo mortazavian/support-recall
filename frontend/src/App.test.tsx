@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
@@ -28,6 +28,7 @@ describe('SupportRecall application shell', () => {
     render(<App />)
 
     expect(await screen.findByRole('status')).toHaveTextContent('سرور متصل است')
+    expect(await screen.findByText('ذخیره‌سازی آماده است')).toBeInTheDocument()
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/health')
     expect(screen.getByRole('navigation', { name: 'ناوبری اصلی' })).toBeInTheDocument()
   })
@@ -43,10 +44,34 @@ describe('SupportRecall application shell', () => {
 
     const status = await screen.findByRole('status')
     expect(status).toHaveTextContent('ارتباط با سرور برقرار نشد')
+    expect(await screen.findByText('وضعیت ذخیره‌سازی نامشخص است')).toBeInTheDocument()
+    expect(screen.queryByText('ذخیره‌سازی آماده است')).not.toBeInTheDocument()
     fireEvent.click(within(status).getByRole('button', { name: 'تلاش دوباره' }))
 
     await waitFor(() => expect(status).toHaveTextContent('سرور متصل است'))
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps storage unconfirmed while the health request is pending', async () => {
+    let resolveHealth: (value: ReturnType<typeof response>) => void = () => {
+      throw new Error('health response was not requested')
+    }
+    const pendingHealth = new Promise<ReturnType<typeof response>>((resolve) => {
+      resolveHealth = resolve
+    })
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(pendingHealth))
+
+    render(<App />)
+
+    expect(screen.getByText('در حال بررسی ذخیره‌سازی')).toBeInTheDocument()
+    expect(screen.queryByText('ذخیره‌سازی آماده است')).not.toBeInTheDocument()
+
+    await act(async () => {
+      resolveHealth(response(healthResponse))
+      await pendingHealth
+    })
+
+    expect(await screen.findByText('ذخیره‌سازی آماده است')).toBeInTheDocument()
   })
 
   it('switches navigation views instead of leaving placeholder controls inert', async () => {

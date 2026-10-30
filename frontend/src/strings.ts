@@ -17,7 +17,9 @@ export const strings = {
     disconnected: 'ارتباط با سرور برقرار نشد',
     retry: 'تلاش دوباره',
     backend: 'وضعیت سرویس',
+    storageChecking: 'در حال بررسی ذخیره‌سازی',
     storageReady: 'ذخیره‌سازی آماده است',
+    storageUnknown: 'وضعیت ذخیره‌سازی نامشخص است',
   },
   chat: {
     eyebrow: 'فضای پاسخ‌گویی',
@@ -46,7 +48,7 @@ export const strings = {
     service: 'سرویس پشتیبانی',
     storage: 'ذخیره‌سازی محلی',
     serviceValue: 'رابط برنامه آماده است',
-    storageValue: 'پایگاه داده برقرار است',
+    storageDescription: 'پایگاه داده محلی',
     note: 'تنظیم مدل و بازیابی دانش در مرحله‌های بعد اضافه می‌شود.',
   },
   footer: 'نسخه آغازین',

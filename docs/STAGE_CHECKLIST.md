@@ -3,7 +3,7 @@
 Each stage is a separate review checkpoint. The next stage begins only after the user explicitly approves or otherwise authorizes it.
 
 - [x] **Stage 0 — Inspect and agree on the design:** proposal reviewed and approved on 2026-10-30.
-- [ ] **Stage 1 — Runnable application skeleton:** backend, frontend, Persian RTL shell, real health connection, persistent storage, configuration, Dockerfiles, Compose, and initial code/customization docs. Verify startup without an LLM.
+- [x] **Stage 1 — Runnable application skeleton:** backend, frontend, Persian RTL shell, real health connection, persistent storage, configuration, Dockerfiles, Compose, and initial code/customization docs. Local startup without an LLM is verified. Compose configuration validates; image build/runtime checks remain blocked by Docker Desktop's unreachable HTTPS proxy, as recorded in `docs/PROGRESS.md`.
 - [ ] **Stage 2 — Import and inspect support data:** CSV with UI mapping, JSON, documented text format, validation, sample data, duplicate handling, persistence, retry, source details, and deletion.
 - [ ] **Stage 3 — Embeddings and retrieval:** multilingual chunking/embedding, persistent source-linked retrieval, inspection utility, delete cleanup, bilingual evaluation, and embedding-change/reindex safeguards.
 - [ ] **Stage 4 — Grounded answer generation:** Ollama and optional OpenAI-compatible adapters, bounded prompts, Persian defaults, citation validation, insufficient-evidence behavior, and graceful provider failures.

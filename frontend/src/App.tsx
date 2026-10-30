@@ -1,15 +1,22 @@
 import { useCallback, useEffect, useReducer, useState } from 'react'
 import type { ReactNode } from 'react'
 import { fetchHealth } from './api'
+import type { HealthStatus } from './api'
 import { strings } from './strings'
 
 type Page = 'chat' | 'knowledge' | 'settings'
 type Connection = 'checking' | 'connected' | 'disconnected'
-type ConnectionAction = { type: 'checking' } | { type: 'resolved'; connected: boolean }
+type StorageStatus = 'checking' | 'ready' | 'unknown'
+type ServiceState = { connection: Connection; storage: StorageStatus }
+type ServiceAction = { type: 'checking' } | { type: 'resolved'; health: HealthStatus | null }
 
-function connectionReducer(_state: Connection, action: ConnectionAction): Connection {
-  if (action.type === 'checking') return 'checking'
-  return action.connected ? 'connected' : 'disconnected'
+function serviceReducer(_state: ServiceState, action: ServiceAction): ServiceState {
+  if (action.type === 'checking') return { connection: 'checking', storage: 'checking' }
+  if (action.health === null) return { connection: 'disconnected', storage: 'unknown' }
+  return {
+    connection: 'connected',
+    storage: action.health.storage === 'ready' ? 'ready' : 'unknown',
+  }
 }
 
 const navigation: { id: Page; label: string; icon: string }[] = [
@@ -48,19 +55,23 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
 
 function App() {
   const [activePage, setActivePage] = useState<Page>('chat')
-  const [connection, dispatchConnection] = useReducer(connectionReducer, 'checking')
+  const [service, dispatchService] = useReducer(serviceReducer, {
+    connection: 'checking',
+    storage: 'checking',
+  })
+  const { connection, storage } = service
 
   const checkBackend = useCallback(async () => {
     try {
-      await fetchHealth()
-      dispatchConnection({ type: 'resolved', connected: true })
+      const health = await fetchHealth()
+      dispatchService({ type: 'resolved', health })
     } catch {
-      dispatchConnection({ type: 'resolved', connected: false })
+      dispatchService({ type: 'resolved', health: null })
     }
   }, [])
 
   const retryBackend = useCallback(() => {
-    dispatchConnection({ type: 'checking' })
+    dispatchService({ type: 'checking' })
     void checkBackend()
   }, [checkBackend])
 
@@ -75,6 +86,11 @@ function App() {
     connected: strings.health.connected,
     disconnected: strings.health.disconnected,
   }[connection]
+  const storageLabel = {
+    checking: strings.health.storageChecking,
+    ready: strings.health.storageReady,
+    unknown: strings.health.storageUnknown,
+  }[storage]
 
   const pageContent = {
     chat: {
@@ -165,7 +181,7 @@ function App() {
               <div className="card-toolbar">
                 <span className="toolbar-dot" /><span className="toolbar-dot" /><span className="toolbar-dot" />
                 <span className="toolbar-label">{strings.chat.title}</span>
-                <span className="toolbar-status"><Icon name="pulse" size={15} />{strings.health.storageReady}</span>
+                <span className="toolbar-status"><span className={`health-dot ${storage}`} aria-hidden="true" />{storageLabel}</span>
               </div>
               <div className="empty-state chat-empty">
                 <div className="empty-illustration chat-illustration">
@@ -215,8 +231,8 @@ function App() {
               </article>
               <article className="setting-card">
                 <div className="setting-icon"><Icon name="database" /></div>
-                <div><span className="setting-label">{strings.settings.storage}</span><h2>{strings.settings.storageValue}</h2><p>{strings.health.storageReady}</p></div>
-                <span className="health-dot connected" aria-hidden="true" />
+                <div><span className="setting-label">{strings.settings.storage}</span><h2>{storageLabel}</h2><p>{strings.settings.storageDescription}</p></div>
+                <span className={`health-dot ${storage}`} aria-hidden="true" />
               </article>
               <div className="settings-note"><Icon name="sparkle" size={18} /><span>{strings.settings.note}</span></div>
             </section>
