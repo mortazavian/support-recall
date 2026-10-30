@@ -9,13 +9,13 @@ services:
     environment:
       SUPPORTRECALL_DATA_DIR: /app/data
       SUPPORTRECALL_UPLOADS_DIR: ${SUPPORTRECALL_UPLOADS_DIR:-/app/uploads}
+      SUPPORTRECALL_VECTOR_DIR: ${SUPPORTRECALL_VECTOR_DIR:-/app/vectors}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      HF_HOME: /home/supportrecall/.cache/huggingface
+      SUPPORTRECALL_EMBEDDING_MODEL: ${SUPPORTRECALL_EMBEDDING_MODEL:-embeddinggemma:latest}
     volumes:
       - app-data:/app/data
       - uploads:/app/uploads
       - vectors:/app/vectors
-      - model-cache:/home/supportrecall/.cache/huggingface
     extra_hosts:
       - host.docker.internal:host-gateway
     healthcheck:
@@ -53,4 +53,3 @@ volumes:
   app-data:
   uploads:
   vectors:
-  model-cache:

@@ -1,0 +1,127 @@
+{
+  "top_k": 3,
+  "conversations": [
+    {
+      "conversation_id": "fa_password_reset",
+      "language": "fa",
+      "messages": [
+        {
+          "role": "customer",
+          "content": "رمز عبور حسابم را فراموش کرده‌ام. چطور از صفحه ورود آن را بازیابی کنم؟"
+        },
+        {
+          "role": "support",
+          "content": "در صفحه ورود، گزینه فراموشی رمز عبور را انتخاب کنید. لینک بازیابی به ایمیل ثبت‌شده ارسال می‌شود."
+        }
+      ]
+    },
+    {
+      "conversation_id": "en_refund_status",
+      "language": "en",
+      "messages": [
+        {
+          "role": "customer",
+          "content": "My card refund is marked processed, but the money is not in my bank account."
+        },
+        {
+          "role": "support",
+          "content": "After a refund is processed, allow five to ten business days for the bank to post the money."
+        }
+      ]
+    },
+    {
+      "conversation_id": "en_shipping_address",
+      "language": "en",
+      "messages": [
+        {
+          "role": "customer",
+          "content": "Can I change the shipping address after placing an order?"
+        },
+        {
+          "role": "support",
+          "content": "Before the package ships, open Orders, choose the order, then select Edit delivery address."
+        }
+      ]
+    },
+    {
+      "conversation_id": "fa_subscription_cancel",
+      "language": "fa",
+      "messages": [
+        {
+          "role": "customer",
+          "content": "می‌خواهم اشتراک ماهانه‌ام را لغو کنم. آیا بعد از لغو همچنان دسترسی دارم؟"
+        },
+        {
+          "role": "support",
+          "content": "از بخش اشتراک‌ها گزینه لغو اشتراک را انتخاب کنید. دسترسی تا پایان دوره پرداخت‌شده فعال می‌ماند."
+        }
+      ]
+    },
+    {
+      "conversation_id": "fa_invoice_download",
+      "language": "fa",
+      "messages": [
+        {
+          "role": "customer",
+          "content": "چطور فاکتور پرداخت ماه قبل را دریافت کنم؟"
+        },
+        {
+          "role": "support",
+          "content": "در بخش صورت‌حساب‌ها، فاکتور پرداخت موردنظر را باز کنید و گزینه دانلود را بزنید."
+        }
+      ]
+    },
+    {
+      "conversation_id": "en_two_factor_login",
+      "language": "en",
+      "messages": [
+        {
+          "role": "customer",
+          "content": "How can I enable two factor verification for account login?"
+        },
+        {
+          "role": "support",
+          "content": "Open Security settings, choose Two factor authentication, and follow the setup steps on your phone."
+        }
+      ]
+    }
+  ],
+  "queries": [
+    {
+      "query_id": "fa_password_same_language",
+      "language": "fa",
+      "text": "چطور می‌توانم رمز عبور فراموش‌شده حساب را از صفحه ورود بازیابی کنم؟",
+      "expected_conversation_id": "fa_password_reset"
+    },
+    {
+      "query_id": "en_refund_same_language",
+      "language": "en",
+      "text": "The refund says processed but the money has not reached my bank.",
+      "expected_conversation_id": "en_refund_status"
+    },
+    {
+      "query_id": "fa_shipping_cross_language",
+      "language": "fa",
+      "text": "چگونه نشانی ارسال سفارش ثبت‌شده را پیش از ارسال بسته تغییر دهم؟",
+      "expected_conversation_id": "en_shipping_address"
+    },
+    {
+      "query_id": "en_subscription_cross_language",
+      "language": "en",
+      "text": "How do I cancel my monthly subscription and keep access until the paid period ends?",
+      "expected_conversation_id": "fa_subscription_cancel"
+    },
+    {
+      "query_id": "en_invoice_cross_language",
+      "language": "en",
+      "text": "Where can I download the invoice for last month's payment?",
+      "expected_conversation_id": "fa_invoice_download"
+    },
+    {
+      "query_id": "fa_two_factor_cross_language",
+      "language": "fa",
+      "text": "برای ورود امن به حساب، تأیید دومرحله‌ای را چگونه فعال کنم؟",
+      "expected_conversation_id": "en_two_factor_login"
+    }
+  ]
+}

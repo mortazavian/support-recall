@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -131,7 +132,7 @@ class VectorIndex:
                 "برای بازسازی نمایه، دستور را با گزینه --confirm اجرا کنید.",
             )
 
-        with sqlite3.connect(database_path) as connection:
+        with closing(sqlite3.connect(database_path)) as connection:
             source_ids = [
                 row[0]
                 for row in connection.execute(
@@ -156,19 +157,20 @@ class VectorIndex:
             metadata={"hnsw:space": "cosine", "embedding_model": self.embedding_model},
         )
 
-    def _source_records(self, database_path: Path, source_id: str) -> list[sqlite3.Row]:
-        with sqlite3.connect(database_path) as connection:
+    def _source_records(self, database_path: Path, source_id: str) -> list[dict[str, object]]:
+        with closing(sqlite3.connect(database_path)) as connection:
             connection.row_factory = sqlite3.Row
             source = connection.execute(
                 "SELECT id FROM sources WHERE id = ?", (source_id,)
             ).fetchone()
             if source is None:
                 raise RetrievalError("source_not_found", "منبع موردنظر پیدا نشد.")
-            return connection.execute(
+            rows = connection.execute(
                 "SELECT id, position, conversation_id, date, product, category, messages_json "
                 "FROM support_records WHERE source_id = ? ORDER BY position",
                 (source_id,),
             ).fetchall()
+            return [dict(row) for row in rows]
 
     def _check_model_profile(self) -> None:
         metadata = dict(self.collection.metadata or {})

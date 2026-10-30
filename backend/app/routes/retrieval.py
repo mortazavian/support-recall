@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -66,7 +67,7 @@ def _source_filenames(
     if not source_ids:
         return {}
     placeholders = ",".join("?" for _ in source_ids)
-    with sqlite3.connect(database_path) as connection:
+    with closing(sqlite3.connect(database_path)) as connection:
         rows = connection.execute(
             f"SELECT id, original_filename FROM sources "
             f"WHERE status = 'ready' AND id IN ({placeholders})",
