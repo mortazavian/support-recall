@@ -8,6 +8,7 @@ services:
     init: true
     environment:
       SUPPORTRECALL_DATA_DIR: /app/data
+      SUPPORTRECALL_UPLOADS_DIR: ${SUPPORTRECALL_UPLOADS_DIR:-/app/uploads}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       HF_HOME: /home/supportrecall/.cache/huggingface
     volumes:

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useState } from 'react'
 import type { ReactNode } from 'react'
 import { fetchHealth } from './api'
 import type { HealthStatus } from './api'
+import KnowledgeView from './KnowledgeView'
 import { strings } from './strings'
 
 type Page = 'chat' | 'knowledge' | 'settings'
@@ -206,20 +207,7 @@ function App() {
           )}
 
           {activePage === 'knowledge' && (
-            <section className="workspace-card secondary-card">
-              <div className="card-toolbar">
-                <span className="toolbar-dot" /><span className="toolbar-dot" /><span className="toolbar-dot" />
-                <span className="toolbar-label">{strings.knowledge.title}</span>
-              </div>
-              <div className="empty-state secondary-empty">
-                <div className="empty-illustration library-illustration"><Icon name="library" size={27} /></div>
-                <span className="empty-kicker">{strings.knowledgeLibrary}</span>
-                <h2>{strings.knowledge.emptyTitle}</h2>
-                <p>{strings.knowledge.emptyDescription}</p>
-                <button className="primary-button" disabled type="button"><Icon name="sparkle" size={17} />{strings.knowledge.action}</button>
-                <small className="disabled-note">{strings.knowledge.comingSoon}</small>
-              </div>
-            </section>
+            <KnowledgeView />
           )}
 
           {activePage === 'settings' && (

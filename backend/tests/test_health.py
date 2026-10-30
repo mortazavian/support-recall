@@ -35,7 +35,7 @@ def test_health_initializes_persistent_database(tmp_path):
             "SELECT value FROM app_meta WHERE key = ?", ("schema_version",)
         ).fetchone()
 
-    assert version == ("1",)
+    assert version == ("2",)
 
 
 def test_health_reuses_existing_database(tmp_path):
