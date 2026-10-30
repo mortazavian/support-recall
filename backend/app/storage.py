@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 SCHEMA_VERSION = "2"
@@ -12,7 +13,7 @@ def initialize_storage(database_path: Path) -> None:
     """Create the application database and its initial schema marker."""
     database_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with sqlite3.connect(database_path) as connection:
+    with closing(sqlite3.connect(database_path)) as connection, connection:
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute(
             "CREATE TABLE IF NOT EXISTS app_meta ("
@@ -57,7 +58,7 @@ def initialize_storage(database_path: Path) -> None:
 
 def check_storage(database_path: Path) -> None:
     """Raise if the initialized database is missing or cannot be queried."""
-    with sqlite3.connect(database_path, timeout=1) as connection:
+    with closing(sqlite3.connect(database_path, timeout=1)) as connection:
         schema_version = connection.execute(
             "SELECT value FROM app_meta WHERE key = ?", ("schema_version",)
         ).fetchone()

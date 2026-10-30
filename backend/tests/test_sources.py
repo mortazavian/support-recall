@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.retrieval.embeddings import EmbeddingError
 from app.settings import Settings
 
 JSON_RECORD = {
@@ -34,6 +35,37 @@ CSV_MAPPING = json.dumps(
 
 def _settings(tmp_path) -> Settings:
     return Settings(data_dir=tmp_path / "data")
+
+
+class _MemoryVectorIndex:
+    def __init__(self) -> None:
+        self.fail_index = False
+        self.fail_delete = False
+        self.status_during_index: str | None = None
+        self.sources: set[str] = set()
+
+    def index_source(self, database_path: Path, source_id: str) -> int:
+        with sqlite3.connect(database_path) as connection:
+            row = connection.execute(
+                "SELECT status FROM sources WHERE id = ?", (source_id,)
+            ).fetchone()
+        self.status_during_index = row[0]
+        if self.fail_index:
+            raise EmbeddingError("embedding_unavailable", "provider unavailable")
+        self.sources.add(source_id)
+        return 1
+
+    def delete_source(self, source_id: str) -> None:
+        if self.fail_delete:
+            raise RuntimeError("simulated vector store failure")
+        self.sources.discard(source_id)
+
+    def has_source(self, source_id: str) -> bool:
+        return source_id in self.sources
+
+
+def _create_app(settings: Settings, vector_index: _MemoryVectorIndex | None = None):
+    return create_app(settings, vector_index=vector_index or _MemoryVectorIndex())
 
 
 def _upload(filename: str, content: bytes, content_type: str = "application/octet-stream"):
@@ -68,7 +100,7 @@ def test_stage1_database_is_additively_migrated_for_sources(tmp_path) -> None:
         ).fetchone()
     assert before == ("1",)
 
-    with TestClient(create_app(settings)) as client:
+    with TestClient(_create_app(settings)) as client:
         assert client.get("/api/health").status_code == 200
 
     with sqlite3.connect(settings.database_path) as connection:
@@ -84,9 +116,32 @@ def test_stage1_database_is_additively_migrated_for_sources(tmp_path) -> None:
     assert {"sources", "support_records"} <= tables
 
 
+def test_upgrade_marks_sources_without_vectors_retryable_without_ollama(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    vector_index = _MemoryVectorIndex()
+    with TestClient(_create_app(settings, vector_index)) as client:
+        imported = _import_json(client)
+        source_id = imported["source"]["id"]
+
+    vector_index.sources.clear()
+    with TestClient(_create_app(settings, vector_index)) as client:
+        health = client.get("/api/health")
+        source = client.get(f"/api/sources/{source_id}").json()["source"]
+
+        assert health.status_code == 200
+        assert source["status"] == "failed"
+        assert source["error_code"] == "index_missing"
+        assert source["retryable"] is True
+
+        retried = client.post(f"/api/sources/{source_id}/retry")
+
+    assert retried.status_code == 200
+    assert retried.json()["source"]["status"] == "ready"
+
+
 def test_preview_returns_csv_headers_and_never_persists_a_source(tmp_path) -> None:
     settings = _settings(tmp_path)
-    with TestClient(create_app(settings)) as client:
+    with TestClient(_create_app(settings)) as client:
         unmapped = client.post("/api/sources/preview", files=_upload("support.csv", CSV_CONTENT))
         mapped = client.post(
             "/api/sources/preview",
@@ -110,7 +165,7 @@ def test_preview_returns_csv_headers_and_never_persists_a_source(tmp_path) -> No
 
 
 def test_import_persists_records_and_duplicate_content_is_idempotent(tmp_path) -> None:
-    with TestClient(create_app(_settings(tmp_path))) as client:
+    with TestClient(_create_app(_settings(tmp_path))) as client:
         imported = _import_json(client)
         source_id = imported["source"]["id"]
         details = client.get(f"/api/sources/{source_id}")
@@ -132,7 +187,7 @@ def test_import_persists_records_and_duplicate_content_is_idempotent(tmp_path) -
 
 def test_preview_returns_persian_validation_error_without_importing(tmp_path) -> None:
     invalid = json.dumps([{"conversation_id": "missing-answer", "question": "پرسش"}]).encode()
-    with TestClient(create_app(_settings(tmp_path))) as client:
+    with TestClient(_create_app(_settings(tmp_path))) as client:
         response = client.post("/api/sources/preview", files=_upload("support.json", invalid))
         sources = client.get("/api/sources")
 
@@ -147,7 +202,7 @@ def test_import_rejects_malformed_csv_and_invalid_json_unicode(tmp_path) -> None
     malformed_csv = b'q,a\nquestion,"unterminated answer'
     lone_surrogate = b'[{"question":"\\ud800","answer":"answer"}]'
     mapping = json.dumps({"question": "q", "answer": "a"})
-    with TestClient(create_app(settings)) as client:
+    with TestClient(_create_app(settings)) as client:
         csv_response = client.post(
             "/api/sources/import",
             files=_upload("support.csv", malformed_csv, "text/csv"),
@@ -168,7 +223,7 @@ def test_import_rejects_malformed_csv_and_invalid_json_unicode(tmp_path) -> None
 
 def test_rejects_unsupported_and_oversized_uploads(tmp_path) -> None:
     too_large = b"x" * (5 * 1024 * 1024 + 1)
-    with TestClient(create_app(_settings(tmp_path))) as client:
+    with TestClient(_create_app(_settings(tmp_path))) as client:
         unsupported = client.post(
             "/api/sources/preview", files=_upload("support.pdf", b"not supported")
         )
@@ -184,7 +239,7 @@ def test_rejects_unsupported_and_oversized_uploads(tmp_path) -> None:
 
 def test_long_original_filename_keeps_its_supported_extension(tmp_path) -> None:
     filename = f"{'x' * 200}.json"
-    with TestClient(create_app(_settings(tmp_path))) as client:
+    with TestClient(_create_app(_settings(tmp_path))) as client:
         response = client.post("/api/sources/preview", files=_json_upload(filename))
 
     assert response.status_code == 200
@@ -193,7 +248,7 @@ def test_long_original_filename_keeps_its_supported_extension(tmp_path) -> None:
 
 def test_interrupted_import_becomes_retryable_and_retry_reuses_source(tmp_path) -> None:
     settings = _settings(tmp_path)
-    with TestClient(create_app(settings)) as client:
+    with TestClient(_create_app(settings)) as client:
         imported = _import_json(client)
         source_id = imported["source"]["id"]
         with sqlite3.connect(settings.database_path) as connection:
@@ -201,7 +256,7 @@ def test_interrupted_import_becomes_retryable_and_retry_reuses_source(tmp_path) 
                 "UPDATE sources SET status = 'processing' WHERE id = ?", (source_id,)
             )
 
-    with TestClient(create_app(settings)) as restarted:
+    with TestClient(_create_app(settings)) as restarted:
         recovered = restarted.get(f"/api/sources/{source_id}")
         retried = restarted.post(f"/api/sources/{source_id}/retry")
         final = restarted.get(f"/api/sources/{source_id}")
@@ -218,7 +273,7 @@ def test_interrupted_import_becomes_retryable_and_retry_reuses_source(tmp_path) 
 
 def test_deleting_source_removes_records_and_original_upload(tmp_path) -> None:
     settings = _settings(tmp_path)
-    with TestClient(create_app(settings)) as client:
+    with TestClient(_create_app(settings)) as client:
         imported = _import_json(client)
         source_id = imported["source"]["id"]
         assert len(list(settings.uploads_dir.iterdir())) == 1
@@ -247,7 +302,7 @@ def test_upload_write_failure_does_not_publish_an_unrecoverable_source(
         return result
 
     monkeypatch.setattr(sources_module.Path, "write_bytes", write_then_fail)
-    with TestClient(create_app(settings), raise_server_exceptions=False) as client:
+    with TestClient(_create_app(settings), raise_server_exceptions=False) as client:
         response = client.post("/api/sources/import", files=_json_upload())
         sources = client.get("/api/sources")
 
@@ -260,7 +315,7 @@ def test_unlink_failure_keeps_source_and_upload_available_for_retry(tmp_path, mo
     import app.sources as sources_module
 
     settings = _settings(tmp_path)
-    with TestClient(create_app(settings)) as client:
+    with TestClient(_create_app(settings)) as client:
         imported = _import_json(client)
         source_id = imported["source"]["id"]
         stored_file = next(settings.uploads_dir.iterdir())
@@ -291,7 +346,7 @@ def test_startup_removes_interrupted_upload_temporary_files(tmp_path) -> None:
     temporary_upload = settings.uploads_dir / ("a" * 32 + ".json.tmp")
     temporary_upload.write_bytes(b"partial")
 
-    with TestClient(create_app(settings)) as client:
+    with TestClient(_create_app(settings)) as client:
         assert client.get("/api/health").status_code == 200
 
     assert not temporary_upload.exists()
@@ -306,3 +361,58 @@ def test_upload_directory_uses_environment_override(tmp_path, monkeypatch) -> No
     settings = Settings.from_environment()
 
     assert settings.uploads_dir == upload_dir.resolve()
+
+
+def test_import_marks_source_ready_only_after_vector_indexing(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    index = _MemoryVectorIndex()
+
+    with TestClient(_create_app(settings, index)) as client:
+        imported = _import_json(client)
+
+    assert index.status_during_index == "processing"
+    assert imported["source"]["status"] == "ready"
+
+
+def test_failed_index_keeps_source_upload_and_records_retryable(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    index = _MemoryVectorIndex()
+    index.fail_index = True
+
+    with TestClient(_create_app(settings, index)) as client:
+        failed = client.post("/api/sources/import", files=_json_upload())
+        sources = client.get("/api/sources").json()
+        source_id = sources[0]["id"]
+        detail = client.get(f"/api/sources/{source_id}").json()
+        assert len(list(settings.uploads_dir.iterdir())) == 1
+
+        index.fail_index = False
+        retried = client.post(f"/api/sources/{source_id}/retry")
+
+    assert failed.status_code == 503
+    assert failed.json()["detail"]["code"] == "embedding_unavailable"
+    assert sources[0]["status"] == "failed"
+    assert sources[0]["retryable"] is True
+    assert len(detail["records"]) == 1
+    assert retried.status_code == 200
+    assert retried.json()["source"]["status"] == "ready"
+    assert index.sources == {source_id}
+
+
+def test_delete_keeps_source_and_upload_when_vector_deletion_fails(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    index = _MemoryVectorIndex()
+
+    with TestClient(_create_app(settings, index)) as client:
+        imported = _import_json(client)
+        source_id = imported["source"]["id"]
+        stored_upload = next(settings.uploads_dir.iterdir())
+        index.fail_delete = True
+
+        failed = client.delete(f"/api/sources/{source_id}")
+        retained = client.get(f"/api/sources/{source_id}")
+
+    assert failed.status_code == 500
+    assert retained.status_code == 200
+    assert stored_upload.is_file()
+    assert source_id in index.sources

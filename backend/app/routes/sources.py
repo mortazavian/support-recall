@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
+from starlette.concurrency import run_in_threadpool
 
 from app.imports.parsers import CsvColumnMapping, ImportParseError
 from app.settings import Settings
@@ -48,8 +49,14 @@ async def import_file(
     mapping = _mapping_from_form(mapping_json)
     settings = _settings(request)
     try:
-        return import_source(
-            settings.database_path, settings.uploads_dir, filename, content, mapping
+        return await run_in_threadpool(
+            import_source,
+            settings.database_path,
+            settings.uploads_dir,
+            filename,
+            content,
+            mapping,
+            vector_index=request.app.state.vector_index,
         )
     except ImportParseError as error:
         raise _http_error(422, error.code, error.message) from None
@@ -74,7 +81,9 @@ def source_detail(source_id: str, request: Request) -> dict[str, object]:
 def retry(source_id: str, request: Request) -> dict[str, object]:
     settings = _settings(request)
     try:
-        return retry_source(settings.database_path, settings.uploads_dir, source_id)
+        return retry_source(
+            settings.database_path, settings.uploads_dir, source_id, request.app.state.vector_index
+        )
     except ImportParseError as error:
         raise _http_error(422, error.code, error.message) from None
     except SourceError as error:
@@ -85,7 +94,9 @@ def retry(source_id: str, request: Request) -> dict[str, object]:
 def remove_source(source_id: str, request: Request) -> Response:
     settings = _settings(request)
     try:
-        delete_source(settings.database_path, settings.uploads_dir, source_id)
+        delete_source(
+            settings.database_path, settings.uploads_dir, source_id, request.app.state.vector_index
+        )
     except SourceError as error:
         raise _http_error(error.status_code, error.code, error.message) from None
     return Response(status_code=204)

@@ -5,14 +5,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-def _build_app(data_dir):
+def _build_app(data_dir, ollama_base_url="http://localhost:11434"):
     try:
         settings_module = importlib.import_module("app.settings")
         main_module = importlib.import_module("app.main")
     except ModuleNotFoundError as error:
         pytest.fail(f"Backend health implementation is missing: {error.name}", pytrace=False)
 
-    return main_module.create_app(settings_module.Settings(data_dir=data_dir))
+    return main_module.create_app(
+        settings_module.Settings(data_dir=data_dir, ollama_base_url=ollama_base_url)
+    )
 
 
 def test_health_initializes_persistent_database(tmp_path):
@@ -61,3 +63,12 @@ def test_health_reuses_existing_database(tmp_path):
         ).fetchone()
 
     assert sentinel == ("survives_restart",)
+
+
+def test_health_does_not_require_ollama_to_be_running(tmp_path):
+    app = _build_app(tmp_path / "supportrecall-data", "http://127.0.0.1:1")
+
+    with TestClient(app) as client:
+        response = client.get("/api/health")
+
+    assert response.status_code == 200

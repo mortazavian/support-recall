@@ -22,6 +22,8 @@ from app.imports.parsers import (
     inspect_csv_columns,
     parse_import,
 )
+from app.retrieval.embeddings import EmbeddingError
+from app.retrieval.index import RetrievalError, VectorIndex
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 MAX_RECORDS = 2_000
@@ -89,6 +91,8 @@ def import_source(
     filename: str,
     content: bytes,
     mapping: CsvColumnMapping | None = None,
+    *,
+    vector_index: VectorIndex,
 ) -> dict[str, object]:
     """Persist an uploaded source and its normalized records idempotently."""
     safe_filename = _safe_filename(filename)
@@ -144,6 +148,9 @@ def import_source(
     try:
         _set_state(database_path, source_id, "processing")
         _persist_records(database_path, source_id, parsed.records)
+        _index_source(database_path, source_id, vector_index)
+    except SourceError:
+        raise
     except Exception:
         _set_state(
             database_path,
@@ -197,7 +204,9 @@ def get_source_detail(database_path: Path, source_id: str) -> dict[str, object]:
     return {"source": _source_summary(source), "records": records}
 
 
-def retry_source(database_path: Path, uploads_dir: Path, source_id: str) -> dict[str, object]:
+def retry_source(
+    database_path: Path, uploads_dir: Path, source_id: str, vector_index: VectorIndex
+) -> dict[str, object]:
     """Retry a failed source from its stored original bytes."""
     source = _source_by_id(database_path, source_id)
     if source is None:
@@ -235,6 +244,9 @@ def retry_source(database_path: Path, uploads_dir: Path, source_id: str) -> dict
     _set_state(database_path, source_id, "processing")
     try:
         _persist_records(database_path, source_id, parsed.records)
+        _index_source(database_path, source_id, vector_index)
+    except SourceError:
+        raise
     except Exception:
         _set_state(
             database_path,
@@ -254,11 +266,23 @@ def retry_source(database_path: Path, uploads_dir: Path, source_id: str) -> dict
     return {"source": _source_summary(retried), "duplicate": False}
 
 
-def delete_source(database_path: Path, uploads_dir: Path, source_id: str) -> None:
+def delete_source(
+    database_path: Path, uploads_dir: Path, source_id: str, vector_index: VectorIndex
+) -> None:
     """Delete a source, its foreign-keyed records, and its original upload."""
     source = _source_by_id(database_path, source_id)
     if source is None:
         raise SourceError(404, "source_not_found", "منبع موردنظر پیدا نشد.")
+    try:
+        vector_index.delete_source(source_id)
+    except RetrievalError as error:
+        raise SourceError(500, error.code, error.message) from None
+    except Exception:
+        raise SourceError(
+            500,
+            "vector_delete_failed",
+            "حذف بردارهای منبع انجام نشد. فضای ذخیره‌سازی را بررسی کنید و دوباره تلاش کنید.",
+        ) from None
     stored_name = source["stored_name"]
     if Path(stored_name).name == stored_name:
         try:
@@ -299,6 +323,30 @@ def recover_interrupted_sources(database_path: Path, uploads_dir: Path) -> None:
                 path.unlink(missing_ok=True)
             except OSError:
                 _logger.warning("Could not remove interrupted upload artifact %s", path.name)
+
+
+def mark_sources_missing_vectors(database_path: Path, vector_index: VectorIndex) -> None:
+    """Mark ready sources without vectors as retryable after an upgrade or restart."""
+    with _database(database_path) as connection:
+        source_ids = [
+            row[0]
+            for row in connection.execute(
+                "SELECT id FROM sources WHERE status = 'ready' ORDER BY id"
+            ).fetchall()
+        ]
+
+    for source_id in source_ids:
+        if not vector_index.has_source(source_id):
+            _set_state(
+                database_path,
+                source_id,
+                "failed",
+                error_code="index_missing",
+                error_message=(
+                    "برای این منبع برداری ذخیره نشده است. "
+                    "Ollama را اجرا و سپس منبع را دوباره وارد یا نمایه را بازسازی کنید."
+                ),
+            )
 
 
 def _check_upload_size(content: bytes) -> None:
@@ -402,10 +450,36 @@ def _persist_records(
             ],
         )
         connection.execute(
-            "UPDATE sources SET status = 'ready', record_count = ?, error_code = NULL, "
+            "UPDATE sources SET status = 'processing', record_count = ?, error_code = NULL, "
             "error_message = NULL, updated_at = ? WHERE id = ?",
             (len(records), _now(), source_id),
         )
+
+
+def _index_source(database_path: Path, source_id: str, vector_index: VectorIndex) -> None:
+    try:
+        vector_index.index_source(database_path, source_id)
+    except (EmbeddingError, RetrievalError) as error:
+        _set_state(
+            database_path,
+            source_id,
+            "failed",
+            error_code=error.code,
+            error_message=error.message,
+        )
+        raise SourceError(503, error.code, error.message) from None
+    except Exception:
+        message = "نمایه‌سازی منبع انجام نشد. Ollama و فضای ذخیره‌سازی را بررسی و دوباره تلاش کنید."
+        _set_state(
+            database_path,
+            source_id,
+            "failed",
+            error_code="indexing_failed",
+            error_message=message,
+        )
+        raise SourceError(503, "indexing_failed", message) from None
+
+    _set_state(database_path, source_id, "ready")
 
 
 def _set_state(
