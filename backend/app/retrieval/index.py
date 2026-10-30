@@ -123,6 +123,39 @@ class VectorIndex:
             for text, metadata, distance in zip(documents, metadatas, distances, strict=True)
         ]
 
+    def rebuild(self, database_path: Path, *, confirmed: bool) -> int:
+        """Replace the full vector collection from every ready SQLite source."""
+        if not confirmed:
+            raise RetrievalError(
+                "reindex_confirmation_required",
+                "برای بازسازی نمایه، دستور را با گزینه --confirm اجرا کنید.",
+            )
+
+        with sqlite3.connect(database_path) as connection:
+            source_ids = [
+                row[0]
+                for row in connection.execute(
+                    "SELECT id FROM sources WHERE status = 'ready' ORDER BY created_at, id"
+                ).fetchall()
+            ]
+
+        self._reset_collection()
+        try:
+            chunk_count = 0
+            for source_id in source_ids:
+                chunk_count += self.index_source(database_path, source_id)
+        except Exception:
+            self._reset_collection()
+            raise
+        return chunk_count
+
+    def _reset_collection(self) -> None:
+        self.client.delete_collection(COLLECTION_NAME)
+        self.collection = self.client.get_or_create_collection(
+            name=COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine", "embedding_model": self.embedding_model},
+        )
+
     def _source_records(self, database_path: Path, source_id: str) -> list[sqlite3.Row]:
         with sqlite3.connect(database_path) as connection:
             connection.row_factory = sqlite3.Row

@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from app.retrieval.embeddings import OllamaEmbedder
 from app.retrieval.index import VectorIndex
+from app.routes.retrieval import router as retrieval_router
 from app.routes.sources import router as sources_router
 from app.settings import Settings
 from app.sources import recover_interrupted_sources
@@ -43,6 +44,7 @@ def create_app(
     application = FastAPI(title="SupportRecall API", lifespan=lifespan)
     application.state.settings = app_settings
     application.include_router(sources_router)
+    application.include_router(retrieval_router)
 
     @application.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:
