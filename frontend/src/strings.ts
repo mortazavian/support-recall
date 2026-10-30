@@ -55,6 +55,7 @@ export const strings = {
     mappingDescription: 'ستون پرسش و پاسخ را مشخص کنید؛ نگاشت اطلاعات دیگر اختیاری است.',
     questionColumn: 'ستون پرسش',
     answerColumn: 'ستون پاسخ',
+    selectColumn: 'انتخاب ستون',
     conversationIdColumn: 'ستون شناسه گفت‌وگو',
     dateColumn: 'ستون تاریخ',
     productColumn: 'ستون محصول',
@@ -102,6 +103,7 @@ export const strings = {
     fileRequired: 'ابتدا یک فایل پشتیبانی انتخاب کنید.',
     mappingRequired: 'ستون پرسش و پاسخ را انتخاب کنید.',
     chooseFileAgain: 'برای ادامه، فایل را دوباره انتخاب کنید.',
+    fileTooLarge: 'حجم فایل نباید بیشتر از ۵ مگابایت باشد.',
   },
   settings: {
     eyebrow: 'پیکربندی برنامه',

@@ -217,3 +217,32 @@ def test_synthetic_persian_samples_match_the_documented_parsers() -> None:
         any("پ" in message.content for message in row.messages)
         for row in text_result.records
     )
+
+
+def test_rejects_unterminated_quoted_csv_fields() -> None:
+    content = b'q,a\nquestion,"unterminated answer'
+
+    with pytest.raises(ImportParseError) as error:
+        parse_import("support.csv", content, CsvColumnMapping(question="q", answer="a"))
+
+    assert error.value.code == "invalid_csv"
+    assert "ساختار CSV" in error.value.message
+
+
+def test_csv_fields_can_use_the_documented_upload_size() -> None:
+    long_answer = "پ" * 140_000
+    content = f"q,a\nquestion,{long_answer}\n".encode("utf-8")
+
+    result = parse_import("support.csv", content, CsvColumnMapping(question="q", answer="a"))
+
+    assert result.records[0].messages[1].content == long_answer
+
+
+def test_rejects_json_lone_surrogates_with_a_validation_error() -> None:
+    content = b'[{"question":"\\ud800","answer":"answer"}]'
+
+    with pytest.raises(ImportParseError) as error:
+        parse_import("support.json", content)
+
+    assert error.value.code == "invalid_unicode"
+    assert "یونیکد" in error.value.message

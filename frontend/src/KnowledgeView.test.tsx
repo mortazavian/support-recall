@@ -29,6 +29,13 @@ function response(body: unknown, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body }
 }
 
+function uploadedFile(init?: RequestInit): File {
+  if (!(init?.body instanceof FormData)) throw new Error('upload body was not a form')
+  const file = init.body.get('file')
+  if (!(file instanceof File)) throw new Error('upload file was not included')
+  return file
+}
+
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
@@ -136,7 +143,10 @@ describe('Persian knowledge import workflow', () => {
     })
 
     expect(await screen.findByText('نگاشت ستون‌های CSV')).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('ستون پرسش'), { target: { value: 'پرسش مشتری' } })
+    const questionSelect = screen.getByLabelText('ستون پرسش')
+    expect(questionSelect).toHaveValue('')
+    expect(within(questionSelect).getByRole('option', { name: 'انتخاب ستون' })).toBeInTheDocument()
+    fireEvent.change(questionSelect, { target: { value: 'پرسش مشتری' } })
     fireEvent.change(screen.getByLabelText('ستون پاسخ'), { target: { value: 'پاسخ پشتیبانی' } })
     fireEvent.click(screen.getByRole('button', { name: 'ساخت پیش‌نمایش' }))
 
@@ -172,6 +182,72 @@ describe('Persian knowledge import workflow', () => {
       'گفت‌وگو باید پرسش و پاسخ داشته باشد.',
     )
     expect(screen.queryByRole('button', { name: 'ورود به کتابخانه' })).not.toBeInTheDocument()
+  })
+
+  it('discards an older file preview when a newer selection finishes first', async () => {
+    const previewContent = (content: string) => ({
+      format: 'json',
+      columns: [],
+      needs_mapping: false,
+      record_count: 1,
+      records: [{
+        conversation_id: null,
+        date: null,
+        product: null,
+        category: null,
+        messages: [
+          { role: 'customer', content },
+          { role: 'support', content: 'پاسخ نمونه' },
+        ],
+      }],
+    })
+    const resolvers = new Map<string, (value: ReturnType<typeof response>) => void>()
+    const importedFiles: File[] = []
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/sources') return Promise.resolve(response([]))
+      if (url === '/api/sources/preview') {
+        const selected = uploadedFile(init)
+        return new Promise<ReturnType<typeof response>>((resolve) => {
+          resolvers.set(selected.name, resolve)
+        })
+      }
+      if (url === '/api/sources/import') {
+        importedFiles.push(uploadedFile(init))
+        return Promise.resolve(response({ source: readySource, duplicate: false }))
+      }
+      return Promise.resolve(response({ detail: 'unexpected request' }, 404))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    function resolvePreview(name: string, body: unknown) {
+      const resolve = resolvers.get(name)
+      expect(resolve).toBeDefined()
+      resolve?.(response(body))
+    }
+
+    render(<KnowledgeView />)
+    const input = screen.getByLabelText('فایل ورودی پشتیبانی')
+    fireEvent.change(input, {
+      target: { files: [new File(['اول'], 'اول.json', { type: 'application/json' })] },
+    })
+    fireEvent.change(input, {
+      target: { files: [new File(['دوم'], 'دوم.json', { type: 'application/json' })] },
+    })
+
+    await act(async () => {
+      resolvePreview('دوم.json', previewContent('پیش‌نمایش فایل دوم'))
+    })
+    expect(await screen.findByText('پیش‌نمایش فایل دوم')).toBeInTheDocument()
+    await act(async () => {
+      resolvePreview('اول.json', previewContent('پیش‌نمایش فایل اول'))
+    })
+
+    expect(screen.getByText('پیش‌نمایش فایل دوم')).toBeInTheDocument()
+    expect(screen.queryByText('پیش‌نمایش فایل اول')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'ورود به کتابخانه' }))
+    await screen.findByText('منبع با موفقیت وارد شد.')
+    expect(importedFiles[0]?.name).toBe('دوم.json')
   })
 
   it('retries a failed source and requires Persian confirmation before deletion', async () => {

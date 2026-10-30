@@ -12,6 +12,9 @@ from typing import Literal, Mapping
 
 ImportFormat = Literal["csv", "json", "text"]
 SpeakerRole = Literal["customer", "support"]
+MAX_CSV_FIELD_CHARS = 5 * 1024 * 1024
+_INVALID_CSV_MESSAGE = "ساختار CSV معتبر نیست؛ نقل‌قول‌ها و جداکننده‌ها را بررسی کنید."
+csv.field_size_limit(MAX_CSV_FIELD_CHARS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,8 +103,11 @@ def inspect_csv_columns(content: bytes) -> tuple[str, ...]:
     if not content or not content.strip():
         raise ImportParseError("empty_file", "فایل خالی است.")
     text = _decode_text(content, allow_windows_csv=True)
-    reader = csv.reader(io.StringIO(text, newline=""))
-    return _validated_columns(next(reader, []))
+    try:
+        reader = csv.reader(io.StringIO(text, newline=""), strict=True)
+        return _validated_columns(next(reader, []))
+    except csv.Error:
+        raise ImportParseError("invalid_csv", _INVALID_CSV_MESSAGE) from None
 
 
 def _decode_text(content: bytes, *, allow_windows_csv: bool) -> str:
@@ -119,12 +125,19 @@ def _decode_text(content: bytes, *, allow_windows_csv: bool) -> str:
 
 
 def _parse_csv(text: str, mapping: CsvColumnMapping | None) -> ParsedImport:
+    try:
+        return _parse_csv_rows(text, mapping)
+    except csv.Error:
+        raise ImportParseError("invalid_csv", _INVALID_CSV_MESSAGE) from None
+
+
+def _parse_csv_rows(text: str, mapping: CsvColumnMapping | None) -> ParsedImport:
     if mapping is None:
         raise ImportParseError(
             "mapping_required", "برای فایل CSV ستون پرسش و پاسخ را انتخاب کنید."
         )
 
-    reader = csv.DictReader(io.StringIO(text, newline=""))
+    reader = csv.DictReader(io.StringIO(text, newline=""), strict=True)
     columns = _validated_columns(reader.fieldnames or [])
     if not columns:
         raise ImportParseError("invalid_csv_headers", "سطر نخست CSV باید نام ستون‌ها را داشته باشد.")
@@ -191,11 +204,29 @@ def _parse_json(text: str) -> ParsedImport:
         payload = json.loads(text)
     except json.JSONDecodeError:
         raise ImportParseError("invalid_json", "ساختار JSON معتبر نیست.") from None
+    if _contains_surrogate(payload):
+        raise ImportParseError(
+            "invalid_unicode",
+            "متن JSON دارای نویسه یونیکد نامعتبر است؛ فایل را با UTF-8 معتبر ذخیره کنید.",
+        )
     if not isinstance(payload, list) or not payload:
         raise ImportParseError("invalid_json_schema", "JSON باید فهرستی از گفت‌وگوها باشد.")
 
     records = tuple(_parse_json_record(item, index) for index, item in enumerate(payload, start=1))
     return ParsedImport(format="json", columns=(), records=records)
+
+
+def _contains_surrogate(value: object) -> bool:
+    if isinstance(value, str):
+        return any(0xD800 <= ord(character) <= 0xDFFF for character in value)
+    if isinstance(value, list):
+        return any(_contains_surrogate(item) for item in value)
+    if isinstance(value, dict):
+        return any(
+            _contains_surrogate(key) or _contains_surrogate(item)
+            for key, item in value.items()
+        )
+    return False
 
 
 def _parse_json_record(value: object, index: int) -> Conversation:

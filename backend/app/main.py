@@ -28,7 +28,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_: FastAPI):
         initialize_storage(app_settings.database_path)
         app_settings.uploads_dir.mkdir(parents=True, exist_ok=True)
-        recover_interrupted_sources(app_settings.database_path)
+        recover_interrupted_sources(app_settings.database_path, app_settings.uploads_dir)
         yield
 
     application = FastAPI(title="SupportRecall API", lifespan=lifespan)

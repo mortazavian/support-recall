@@ -47,7 +47,8 @@ Restore both while the backend is stopped. Keep the uploads directory contents i
 ```powershell
 docker compose stop backend
 docker compose cp .\supportrecall.sqlite3.backup backend:/app/data/supportrecall.sqlite3
-docker compose cp .\uploads-backup backend:/app/uploads
+docker compose cp .\uploads-backup/. backend:/app/uploads
+docker compose run --rm --no-deps --user 0:0 backend chown -R 10001:10001 /app/data /app/uploads
 docker compose start backend
 ```
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import sqlite3
 import uuid
@@ -25,6 +26,7 @@ from app.imports.parsers import (
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 MAX_RECORDS = 2_000
 PREVIEW_LIMIT = 20
+_logger = logging.getLogger(__name__)
 
 
 class SourceError(ValueError):
@@ -102,6 +104,15 @@ def import_source(
 
     source_id = uuid.uuid4().hex
     stored_name = f"{source_id}{Path(safe_filename).suffix.lower()}"
+    try:
+        _write_upload(uploads_dir, stored_name, content)
+    except OSError:
+        raise SourceError(
+            500,
+            "upload_write_failed",
+            "ذخیره فایل اصلی منبع انجام نشد؛ فضای ذخیره‌سازی را بررسی و دوباره تلاش کنید.",
+        ) from None
+
     now = _now()
     try:
         with _database(database_path) as connection:
@@ -121,13 +132,16 @@ def import_source(
                 ),
             )
     except sqlite3.IntegrityError:
+        _remove_upload(uploads_dir, stored_name)
         existing = _source_by_hash(database_path, content_hash)
         if existing is not None:
             return {"source": _source_summary(existing), "duplicate": True}
         raise
+    except Exception:
+        _remove_upload(uploads_dir, stored_name)
+        raise
 
     try:
-        _write_upload(uploads_dir, stored_name, content)
         _set_state(database_path, source_id, "processing")
         _persist_records(database_path, source_id, parsed.records)
     except Exception:
@@ -246,13 +260,20 @@ def delete_source(database_path: Path, uploads_dir: Path, source_id: str) -> Non
     if source is None:
         raise SourceError(404, "source_not_found", "منبع موردنظر پیدا نشد.")
     stored_name = source["stored_name"]
+    if Path(stored_name).name == stored_name:
+        try:
+            (uploads_dir / stored_name).unlink(missing_ok=True)
+        except OSError:
+            raise SourceError(
+                500,
+                "upload_delete_failed",
+                "حذف فایل اصلی منبع انجام نشد؛ دسترسی پوشه را بررسی و دوباره تلاش کنید.",
+            ) from None
     with _database(database_path) as connection:
         connection.execute("DELETE FROM sources WHERE id = ?", (source_id,))
-    if Path(stored_name).name == stored_name:
-        (uploads_dir / stored_name).unlink(missing_ok=True)
 
 
-def recover_interrupted_sources(database_path: Path) -> None:
+def recover_interrupted_sources(database_path: Path, uploads_dir: Path) -> None:
     """Mark imports interrupted by a restart as failed and retryable."""
     with _database(database_path) as connection:
         connection.execute(
@@ -260,6 +281,24 @@ def recover_interrupted_sources(database_path: Path) -> None:
             "error_message = ?, updated_at = ? WHERE status IN ('pending', 'processing')",
             ("ورود منبع پیش از پایان برنامه متوقف شد. برای ادامه دوباره تلاش کنید.", _now()),
         )
+        referenced_uploads = {
+            row[0] for row in connection.execute("SELECT stored_name FROM sources").fetchall()
+        }
+    for path in uploads_dir.iterdir():
+        if not path.is_file():
+            continue
+        temporary_upload = path.name.endswith(".tmp")
+        generated_orphan = (
+            path.name not in referenced_uploads
+            and len(path.stem) == 32
+            and all(character in "0123456789abcdef" for character in path.stem)
+            and path.suffix.lower() in {".csv", ".json", ".txt"}
+        )
+        if temporary_upload or generated_orphan:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                _logger.warning("Could not remove interrupted upload artifact %s", path.name)
 
 
 def _check_upload_size(content: bytes) -> None:
@@ -322,8 +361,18 @@ def _write_upload(uploads_dir: Path, stored_name: str, content: bytes) -> None:
     uploads_dir.mkdir(parents=True, exist_ok=True)
     temporary_path = uploads_dir / f"{stored_name}.tmp"
     final_path = uploads_dir / stored_name
-    temporary_path.write_bytes(content)
-    os.replace(temporary_path, final_path)
+    try:
+        temporary_path.write_bytes(content)
+        os.replace(temporary_path, final_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def _remove_upload(uploads_dir: Path, stored_name: str) -> None:
+    try:
+        (uploads_dir / stored_name).unlink(missing_ok=True)
+    except OSError:
+        _logger.warning("Could not remove unreferenced upload %s", stored_name)
 
 
 def _persist_records(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -141,6 +142,30 @@ def test_preview_returns_persian_validation_error_without_importing(tmp_path) ->
     assert sources.json() == []
 
 
+def test_import_rejects_malformed_csv_and_invalid_json_unicode(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    malformed_csv = b'q,a\nquestion,"unterminated answer'
+    lone_surrogate = b'[{"question":"\\ud800","answer":"answer"}]'
+    mapping = json.dumps({"question": "q", "answer": "a"})
+    with TestClient(create_app(settings)) as client:
+        csv_response = client.post(
+            "/api/sources/import",
+            files=_upload("support.csv", malformed_csv, "text/csv"),
+            data={"mapping_json": mapping},
+        )
+        json_response = client.post(
+            "/api/sources/import",
+            files=_upload("support.json", lone_surrogate, "application/json"),
+        )
+        sources = client.get("/api/sources")
+
+    assert csv_response.status_code == 422
+    assert csv_response.json()["detail"]["code"] == "invalid_csv"
+    assert json_response.status_code == 422
+    assert json_response.json()["detail"]["code"] == "invalid_unicode"
+    assert sources.json() == []
+
+
 def test_rejects_unsupported_and_oversized_uploads(tmp_path) -> None:
     too_large = b"x" * (5 * 1024 * 1024 + 1)
     with TestClient(create_app(_settings(tmp_path))) as client:
@@ -205,6 +230,71 @@ def test_deleting_source_removes_records_and_original_upload(tmp_path) -> None:
     assert detail.status_code == 404
     assert listed.json() == []
     assert list(settings.uploads_dir.iterdir()) == []
+
+
+def test_upload_write_failure_does_not_publish_an_unrecoverable_source(
+    tmp_path, monkeypatch
+) -> None:
+    import app.sources as sources_module
+
+    settings = _settings(tmp_path)
+    original_write_bytes = Path.write_bytes
+
+    def write_then_fail(path: Path, content: bytes) -> int:
+        result = original_write_bytes(path, content)
+        if path.name.endswith(".tmp"):
+            raise OSError("simulated disk interruption")
+        return result
+
+    monkeypatch.setattr(sources_module.Path, "write_bytes", write_then_fail)
+    with TestClient(create_app(settings), raise_server_exceptions=False) as client:
+        response = client.post("/api/sources/import", files=_json_upload())
+        sources = client.get("/api/sources")
+
+    assert response.status_code == 500
+    assert sources.json() == []
+    assert list(settings.uploads_dir.iterdir()) == []
+
+
+def test_unlink_failure_keeps_source_and_upload_available_for_retry(tmp_path, monkeypatch) -> None:
+    import app.sources as sources_module
+
+    settings = _settings(tmp_path)
+    with TestClient(create_app(settings)) as client:
+        imported = _import_json(client)
+        source_id = imported["source"]["id"]
+        stored_file = next(settings.uploads_dir.iterdir())
+        original_unlink = Path.unlink
+
+        def fail_target_unlink(path: Path, *args, **kwargs) -> None:
+            if path == stored_file:
+                raise PermissionError("simulated locked upload")
+            original_unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(sources_module.Path, "unlink", fail_target_unlink)
+        failed_delete = client.delete(f"/api/sources/{source_id}")
+        retained = client.get(f"/api/sources/{source_id}")
+        assert failed_delete.status_code == 500
+        assert retained.status_code == 200
+        assert stored_file.exists()
+
+        monkeypatch.setattr(sources_module.Path, "unlink", original_unlink)
+        successful_delete = client.delete(f"/api/sources/{source_id}")
+
+    assert successful_delete.status_code == 204
+    assert not stored_file.exists()
+
+
+def test_startup_removes_interrupted_upload_temporary_files(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    settings.uploads_dir.mkdir(parents=True)
+    temporary_upload = settings.uploads_dir / ("a" * 32 + ".json.tmp")
+    temporary_upload.write_bytes(b"partial")
+
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/api/health").status_code == 200
+
+    assert not temporary_upload.exists()
 
 
 def test_upload_directory_uses_environment_override(tmp_path, monkeypatch) -> None:

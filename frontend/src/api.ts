@@ -170,6 +170,9 @@ async function apiError(response: Response): Promise<ApiRequestError> {
   } catch {
     // The fallback below keeps server or network errors in Persian.
   }
+  if (response.status === 413) {
+    return new ApiRequestError(strings.knowledge.fileTooLarge, 'file_too_large', response.status)
+  }
   return new ApiRequestError(strings.knowledge.requestFailed, 'request_failed', response.status)
 }
 

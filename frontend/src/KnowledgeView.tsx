@@ -44,6 +44,7 @@ function KnowledgeView() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
+  const previewVersion = useRef(0)
 
   const loadSources = useCallback(async () => {
     try {
@@ -65,6 +66,7 @@ function KnowledgeView() {
   }, [])
 
   const chooseFile = useCallback(async (nextFile: File | undefined) => {
+    const version = ++previewVersion.current
     setError('')
     setNotice('')
     setPreview(null)
@@ -74,6 +76,7 @@ function KnowledgeView() {
     setActiveDetailId(null)
     if (!nextFile) {
       setFile(null)
+      setBusy(null)
       return
     }
 
@@ -81,12 +84,14 @@ function KnowledgeView() {
     setBusy('preview')
     try {
       const result = await previewSource(nextFile)
-      setPreview(result)
-      setColumns(result.columns)
+      if (version === previewVersion.current) {
+        setPreview(result)
+        setColumns(result.columns)
+      }
     } catch (requestError) {
-      setError(errorMessage(requestError))
+      if (version === previewVersion.current) setError(errorMessage(requestError))
     } finally {
-      setBusy(null)
+      if (version === previewVersion.current) setBusy(null)
     }
   }, [])
 
@@ -99,10 +104,14 @@ function KnowledgeView() {
   function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault()
     setDragging(false)
+    if (busy === 'import') return
     void chooseFile(event.dataTransfer.files[0])
   }
 
   function updateMapping(field: MappingField, value: string) {
+    previewVersion.current += 1
+    setPreview((current) => current?.needs_mapping ? current : null)
+    setError('')
     setMapping((current) => ({
       ...current,
       [field]: field === 'question' || field === 'answer' ? value : value || null,
@@ -120,15 +129,17 @@ function KnowledgeView() {
     }
     setError('')
     setNotice('')
+    const selectedFile = file
+    const selectedMapping = cleanMapping(mapping)
+    const version = ++previewVersion.current
     setBusy('preview')
     try {
-      const result = await previewSource(file, cleanMapping(mapping))
-      setPreview(result)
+      const result = await previewSource(selectedFile, selectedMapping)
+      if (version === previewVersion.current) setPreview(result)
     } catch (requestError) {
-      setPreview(null)
-      setError(errorMessage(requestError))
+      if (version === previewVersion.current) setError(errorMessage(requestError))
     } finally {
-      setBusy(null)
+      if (version === previewVersion.current) setBusy(null)
     }
   }
 
@@ -139,23 +150,28 @@ function KnowledgeView() {
     }
     setError('')
     setNotice('')
+    const selectedFile = file
+    const selectedMapping = preview.format === 'csv' ? cleanMapping(mapping) : undefined
+    const version = previewVersion.current
     setBusy('import')
     try {
       const result = await importSource(
-        file,
-        preview.format === 'csv' ? cleanMapping(mapping) : undefined,
+        selectedFile,
+        selectedMapping,
       )
-      setNotice(result.duplicate ? strings.knowledge.duplicateNotice : strings.knowledge.importSuccess)
-      setFile(null)
-      setPreview(null)
-      setColumns([])
-      setMapping({ question: '', answer: '' })
+      if (version === previewVersion.current) {
+        setNotice(result.duplicate ? strings.knowledge.duplicateNotice : strings.knowledge.importSuccess)
+        setFile(null)
+        setPreview(null)
+        setColumns([])
+        setMapping({ question: '', answer: '' })
+      }
       await loadSources()
     } catch (requestError) {
-      setError(errorMessage(requestError))
+      if (version === previewVersion.current) setError(errorMessage(requestError))
       await loadSources()
     } finally {
-      setBusy(null)
+      if (version === previewVersion.current) setBusy(null)
     }
   }
 
@@ -246,10 +262,11 @@ function KnowledgeView() {
             accept=".csv,.json,.txt"
             onChange={onFileChange}
             aria-label={strings.knowledge.fileInputLabel}
+            disabled={busy === 'import'}
           />
           <span className="file-drop-icon" aria-hidden="true">↥</span>
           <p>{strings.knowledge.dropPrompt}</p>
-          <button type="button" className="secondary-action" onClick={() => fileInput.current?.click()}>
+          <button type="button" className="secondary-action" disabled={busy === 'import'} onClick={() => fileInput.current?.click()}>
             {strings.knowledge.chooseFile}
           </button>
           {file && <span className="selected-file" dir="auto">{file.name}</span>}
@@ -287,6 +304,7 @@ function KnowledgeView() {
               value={mapping.question}
               columns={columns}
               required
+              disabled={busy !== null}
               onChange={(value) => updateMapping('question', value)}
             />
             <ColumnSelect
@@ -294,30 +312,35 @@ function KnowledgeView() {
               value={mapping.answer}
               columns={columns}
               required
+              disabled={busy !== null}
               onChange={(value) => updateMapping('answer', value)}
             />
             <ColumnSelect
               label={strings.knowledge.conversationIdColumn}
               value={mapping.conversation_id ?? ''}
               columns={columns}
+              disabled={busy !== null}
               onChange={(value) => updateMapping('conversation_id', value)}
             />
             <ColumnSelect
               label={strings.knowledge.dateColumn}
               value={mapping.date ?? ''}
               columns={columns}
+              disabled={busy !== null}
               onChange={(value) => updateMapping('date', value)}
             />
             <ColumnSelect
               label={strings.knowledge.productColumn}
               value={mapping.product ?? ''}
               columns={columns}
+              disabled={busy !== null}
               onChange={(value) => updateMapping('product', value)}
             />
             <ColumnSelect
               label={strings.knowledge.categoryColumn}
               value={mapping.category ?? ''}
               columns={columns}
+              disabled={busy !== null}
               onChange={(value) => updateMapping('category', value)}
             />
           </div>
@@ -454,18 +477,21 @@ function ColumnSelect({
   value,
   columns,
   required = false,
+  disabled = false,
   onChange,
 }: {
   label: string
   value: string
   columns: string[]
   required?: boolean
+  disabled?: boolean
   onChange: (value: string) => void
 }) {
   return (
     <label className="mapping-field">
       <span>{label}{required ? ' *' : ''}</span>
-      <select aria-label={label} required={required} value={value} onChange={(event) => onChange(event.target.value)}>
+      <select aria-label={label} required={required} disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>
+        {required && <option value="" disabled>{strings.knowledge.selectColumn}</option>}
         {!required && <option value="">{strings.knowledge.noColumn}</option>}
         {columns.map((column) => <option key={column} value={column}>{column}</option>)}
       </select>
@@ -481,9 +507,9 @@ function ConversationList({ records }: { records: ImportedConversation[] }) {
         <article className="conversation-preview" key={`${record.conversation_id ?? 'row'}-${index}`}>
           <div className="conversation-meta">
             {record.conversation_id && <span dir="auto">{record.conversation_id}</span>}
-            {record.date && <span>{strings.knowledge.date}: {record.date}</span>}
-            {record.product && <span>{record.product}</span>}
-            {record.category && <span>{record.category}</span>}
+            {record.date && <span dir="auto">{strings.knowledge.date}: {record.date}</span>}
+            {record.product && <span dir="auto">{record.product}</span>}
+            {record.category && <span dir="auto">{record.category}</span>}
           </div>
           <ol className="conversation-messages">
             {record.messages.map((message, messageIndex) => (
