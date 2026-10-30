@@ -1,0 +1,55 @@
+name: supportrecall
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    init: true
+    environment:
+      SUPPORTRECALL_DATA_DIR: /app/data
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      HF_HOME: /home/supportrecall/.cache/huggingface
+    volumes:
+      - app-data:/app/data
+      - uploads:/app/uploads
+      - vectors:/app/vectors
+      - model-cache:/home/supportrecall/.cache/huggingface
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${SUPPORTRECALL_BIND:-127.0.0.1}:${SUPPORTRECALL_PORT:-8080}:8080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  uploads:
+  vectors:
+  model-cache:
