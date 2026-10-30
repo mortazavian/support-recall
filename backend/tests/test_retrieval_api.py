@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
@@ -132,6 +133,38 @@ def test_inspect_returns_provider_error_without_generating_an_answer(tmp_path) -
     assert response.json()["detail"]["code"] == "embedding_unavailable"
     assert any(ord(character) > 127 for character in response.json()["detail"]["message"])
     assert settings.database_path.is_file()
+
+
+def test_inspect_filters_non_ready_vectors_before_applying_limit(tmp_path) -> None:
+    settings, index, app = _app(tmp_path)
+    ready_record = _english_record()
+    interrupted_record = {
+        "conversation_id": "interrupted-subscription",
+        "product": "billing",
+        "category": "subscription",
+        "question": "How do I cancel my monthly subscription?",
+        "answer": "Open billing settings to cancel the subscription.",
+    }
+    with TestClient(app) as client:
+        ready_source = _import_record(client, ready_record, "ready.json")
+        interrupted_source = _import_record(client, interrupted_record, "interrupted.json")
+        with sqlite3.connect(settings.database_path) as connection:
+            connection.execute(
+                "UPDATE sources SET status = 'failed', error_code = 'import_interrupted' "
+                "WHERE id = ?",
+                (interrupted_source["id"],),
+            )
+
+        query = interrupted_record["question"]
+        nearest = index.search(query, limit=1)
+        response = client.post(
+            "/api/retrieval/inspect", json={"query": query, "limit": 1}
+        )
+
+    assert nearest[0]["metadata"]["source_id"] == interrupted_source["id"]
+    assert response.status_code == 200
+    assert len(response.json()["results"]) == 1
+    assert response.json()["results"][0]["source_id"] == ready_source["id"]
 
 
 @pytest.mark.parametrize("profile_change", ["model", "dimension"])

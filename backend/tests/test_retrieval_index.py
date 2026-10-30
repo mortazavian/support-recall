@@ -8,26 +8,27 @@ from pathlib import Path
 import pytest
 
 from app.retrieval.embeddings import EmbeddingError
-from app.retrieval.index import VectorIndex
+from app.retrieval.index import RetrievalError, VectorIndex
 from app.storage import initialize_storage
 
 
 class DeterministicEmbedder:
-    def __init__(self, fail_on_call: int | None = None) -> None:
+    def __init__(self, fail_on_call: int | None = None, dimension: int = 64) -> None:
         self.fail_on_call = fail_on_call
+        self.dimension = dimension
         self.calls = 0
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         self.calls += 1
         if self.calls == self.fail_on_call:
             raise EmbeddingError("embedding_unavailable", "provider unavailable")
-        return [_vector_for(text) for text in texts]
+        return [_vector_for(text, self.dimension) for text in texts]
 
 
-def _vector_for(text: str) -> list[float]:
-    vector = [0.0] * 64
+def _vector_for(text: str, dimension: int) -> list[float]:
+    vector = [0.0] * dimension
     for word in text.lower().split():
-        bucket = int.from_bytes(hashlib.sha256(word.encode("utf-8")).digest()[:2]) % len(vector)
+        bucket = int.from_bytes(hashlib.sha256(word.encode("utf-8")).digest()[:2]) % dimension
         vector[bucket] += 1.0
     return vector
 
@@ -155,3 +156,39 @@ def test_failed_index_can_be_retried_without_duplicate_vectors(tmp_path) -> None
     assert chunk_count > 32
     assert index.collection.count() == chunk_count
     assert len(index.collection.get(include=[])["ids"]) == chunk_count
+
+
+@pytest.mark.parametrize("change_model", [False, True])
+def test_dimension_change_after_deleting_last_source_requires_rebuild(
+    tmp_path, change_model: bool
+) -> None:
+    database_path = _database(tmp_path)
+    index = _index(tmp_path, DeterministicEmbedder(dimension=64))
+    index.index_source(database_path, "source-1")
+    index.delete_source("source-1")
+    index.embedder = DeterministicEmbedder(dimension=32)
+    if change_model:
+        index.embedding_model = "new-test-model"
+
+    with pytest.raises(RetrievalError) as error:
+        index.index_source(database_path, "source-1")
+
+    assert error.value.code == "reindex_required"
+    assert index.collection.count() == 0
+    assert index.collection.metadata["embedding_dimension"] == 64
+
+    assert index.rebuild(database_path, confirmed=True) == 1
+    assert index.collection.metadata["embedding_dimension"] == 32
+
+
+def test_existing_index_instance_refreshes_after_collection_rebuild(tmp_path) -> None:
+    database_path = _database(tmp_path)
+    active_index = _index(tmp_path)
+    reindexer = _index(tmp_path)
+    active_index.index_source(database_path, "source-1")
+
+    reindexer.rebuild(database_path, confirmed=True)
+
+    results = active_index.search("refund", limit=1)
+
+    assert results[0]["metadata"]["source_id"] == "source-1"

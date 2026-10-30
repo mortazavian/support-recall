@@ -325,6 +325,30 @@ def recover_interrupted_sources(database_path: Path, uploads_dir: Path) -> None:
                 _logger.warning("Could not remove interrupted upload artifact %s", path.name)
 
 
+def mark_sources_missing_vectors(database_path: Path, vector_index: VectorIndex) -> None:
+    """Mark ready sources without vectors as retryable after an upgrade or restart."""
+    with _database(database_path) as connection:
+        source_ids = [
+            row[0]
+            for row in connection.execute(
+                "SELECT id FROM sources WHERE status = 'ready' ORDER BY id"
+            ).fetchall()
+        ]
+
+    for source_id in source_ids:
+        if not vector_index.has_source(source_id):
+            _set_state(
+                database_path,
+                source_id,
+                "failed",
+                error_code="index_missing",
+                error_message=(
+                    "برای این منبع برداری ذخیره نشده است. "
+                    "Ollama را اجرا و سپس منبع را دوباره وارد یا نمایه را بازسازی کنید."
+                ),
+            )
+
+
 def _check_upload_size(content: bytes) -> None:
     if len(content) > MAX_UPLOAD_BYTES:
         raise SourceError(413, "file_too_large", "حجم فایل نباید بیشتر از ۵ مگابایت باشد.")

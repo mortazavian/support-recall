@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import closing
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -90,6 +91,7 @@ class VectorIndex:
     def delete_source(self, source_id: str) -> None:
         """Remove every stored chunk belonging to a source."""
         try:
+            self._refresh_collection()
             self.collection.delete(where={"source_id": source_id})
         except Exception:
             raise RetrievalError(
@@ -97,10 +99,15 @@ class VectorIndex:
                 "حذف بردارهای منبع انجام نشد. فضای ذخیره‌سازی را بررسی و دوباره تلاش کنید.",
             ) from None
 
-    def search(self, query: str, limit: int = 5) -> list[dict[str, object]]:
+    def search(
+        self, query: str, limit: int = 5, *, source_ids: list[str] | None = None
+    ) -> list[dict[str, object]]:
         """Return the nearest text chunks and their source metadata."""
         if limit < 1:
             raise ValueError("limit must be positive")
+        self._refresh_collection()
+        if source_ids is not None and not source_ids:
+            return []
         if self.collection.count() == 0:
             return []
         self._check_model_profile()
@@ -111,11 +118,19 @@ class VectorIndex:
                 "تعداد بردارهای Ollama با تعداد متن‌ها برابر نیست. دوباره تلاش کنید.",
             )
         self._check_dimension(len(vectors[0]))
-        response = self.collection.query(
-            query_embeddings=vectors,
-            n_results=min(limit, self.collection.count()),
-            include=["documents", "metadatas", "distances"],
-        )
+        filters = {"source_id": {"$in": source_ids}} if source_ids is not None else None
+        try:
+            response = self.collection.query(
+                query_embeddings=vectors,
+                n_results=min(limit, self.collection.count()),
+                where=filters,
+                include=["documents", "metadatas", "distances"],
+            )
+        except Exception:
+            raise RetrievalError(
+                "vector_search_failed",
+                "جست‌وجو در فضای برداری انجام نشد. فضای ذخیره‌سازی را بررسی و دوباره تلاش کنید.",
+            ) from None
         documents = response["documents"][0]
         metadatas = response["metadatas"][0]
         distances = response["distances"][0]
@@ -123,6 +138,12 @@ class VectorIndex:
             {"text": text, "metadata": metadata, "distance": distance}
             for text, metadata, distance in zip(documents, metadatas, distances, strict=True)
         ]
+
+    def has_source(self, source_id: str) -> bool:
+        """Return whether the vector collection contains chunks for a source."""
+        self._refresh_collection()
+        result = self.collection.get(where={"source_id": source_id}, limit=1, include=[])
+        return bool(result["ids"])
 
     def rebuild(self, database_path: Path, *, confirmed: bool) -> int:
         """Replace the full vector collection from every ready SQLite source."""
@@ -136,7 +157,9 @@ class VectorIndex:
             source_ids = [
                 row[0]
                 for row in connection.execute(
-                    "SELECT id FROM sources WHERE status = 'ready' ORDER BY created_at, id"
+                    "SELECT id FROM sources WHERE status = 'ready' "
+                    "OR (status = 'failed' AND error_code = 'index_missing') "
+                    "ORDER BY created_at, id"
                 ).fetchall()
             ]
 
@@ -148,9 +171,11 @@ class VectorIndex:
         except Exception:
             self._reset_collection()
             raise
+        self._mark_migrated_sources_ready(database_path)
         return chunk_count
 
     def _reset_collection(self) -> None:
+        self._refresh_collection()
         self.client.delete_collection(COLLECTION_NAME)
         self.collection = self.client.get_or_create_collection(
             name=COLLECTION_NAME,
@@ -173,21 +198,21 @@ class VectorIndex:
             return [dict(row) for row in rows]
 
     def _check_model_profile(self) -> None:
+        self._refresh_collection()
         metadata = dict(self.collection.metadata or {})
         stored_model = metadata.get("embedding_model")
         if stored_model != self.embedding_model and self.collection.count() > 0:
             raise self._reindex_required()
         if stored_model != self.embedding_model:
             metadata["embedding_model"] = self.embedding_model
-            metadata.pop("embedding_dimension", None)
             self._save_profile(metadata)
 
     def _check_dimension(self, dimension: int) -> None:
+        self._refresh_collection()
         metadata = dict(self.collection.metadata or {})
         stored_dimension = metadata.get("embedding_dimension")
         if stored_dimension is not None and int(stored_dimension) != dimension:
-            if self.collection.count() > 0:
-                raise self._reindex_required()
+            raise self._reindex_required()
         if stored_dimension is None or int(stored_dimension) != dimension:
             metadata["embedding_dimension"] = dimension
             metadata["embedding_model"] = self.embedding_model
@@ -196,6 +221,26 @@ class VectorIndex:
     def _save_profile(self, metadata: dict[str, Any]) -> None:
         metadata.pop("hnsw:space", None)
         self.collection.modify(metadata=metadata)
+
+    def _refresh_collection(self) -> None:
+        """Refresh this handle after another process recreates the collection."""
+        try:
+            self.collection = self.client.get_collection(name=COLLECTION_NAME)
+        except Exception:
+            raise RetrievalError(
+                "vector_store_unavailable",
+                "فضای ذخیره‌سازی برداری در دسترس نیست. فضای ذخیره‌سازی را بررسی و دوباره تلاش کنید.",
+            ) from None
+
+    @staticmethod
+    def _mark_migrated_sources_ready(database_path: Path) -> None:
+        now = datetime.now(UTC).isoformat(timespec="seconds")
+        with closing(sqlite3.connect(database_path)) as connection, connection:
+            connection.execute(
+                "UPDATE sources SET status = 'ready', error_code = NULL, error_message = NULL, "
+                "updated_at = ? WHERE status = 'failed' AND error_code = 'index_missing'",
+                (now,),
+            )
 
     @staticmethod
     def _reindex_required() -> RetrievalError:

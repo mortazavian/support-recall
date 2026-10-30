@@ -31,17 +31,23 @@ def inspect_retrieval(payload: InspectRequest, request: Request) -> dict[str, ob
             "عبارت جست‌وجو نمی‌تواند خالی باشد.",
         )
 
+    settings = _settings(request)
+    ready_sources = _ready_sources(settings.database_path)
+    if not ready_sources:
+        return {"results": []}
+
     try:
-        matches = request.app.state.vector_index.search(query, limit=payload.limit)
+        matches = request.app.state.vector_index.search(
+            query, limit=payload.limit, source_ids=list(ready_sources)
+        )
     except (EmbeddingError, RetrievalError) as error:
         raise _http_error(503, error.code, error.message) from None
 
-    filenames = _source_filenames(_settings(request).database_path, matches)
     results = []
     for match in matches:
         metadata = match["metadata"]
         source_id = str(metadata["source_id"])
-        filename = filenames.get(source_id)
+        filename = ready_sources.get(source_id)
         if filename is None:
             continue
         results.append(
@@ -60,18 +66,11 @@ def inspect_retrieval(payload: InspectRequest, request: Request) -> dict[str, ob
     return {"results": results}
 
 
-def _source_filenames(
-    database_path: Path, matches: list[dict[str, object]]
-) -> dict[str, str]:
-    source_ids = list({str(match["metadata"]["source_id"]) for match in matches})
-    if not source_ids:
-        return {}
-    placeholders = ",".join("?" for _ in source_ids)
+def _ready_sources(database_path: Path) -> dict[str, str]:
     with closing(sqlite3.connect(database_path)) as connection:
         rows = connection.execute(
-            f"SELECT id, original_filename FROM sources "
-            f"WHERE status = 'ready' AND id IN ({placeholders})",
-            source_ids,
+            "SELECT id, original_filename FROM sources "
+            "WHERE status = 'ready'"
         ).fetchall()
     return {source_id: filename for source_id, filename in rows}
 

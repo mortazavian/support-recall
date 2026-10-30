@@ -60,6 +60,9 @@ class _MemoryVectorIndex:
             raise RuntimeError("simulated vector store failure")
         self.sources.discard(source_id)
 
+    def has_source(self, source_id: str) -> bool:
+        return source_id in self.sources
+
 
 def _create_app(settings: Settings, vector_index: _MemoryVectorIndex | None = None):
     return create_app(settings, vector_index=vector_index or _MemoryVectorIndex())
@@ -111,6 +114,29 @@ def test_stage1_database_is_additively_migrated_for_sources(tmp_path) -> None:
 
     assert after == ("2",)
     assert {"sources", "support_records"} <= tables
+
+
+def test_upgrade_marks_sources_without_vectors_retryable_without_ollama(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    vector_index = _MemoryVectorIndex()
+    with TestClient(_create_app(settings, vector_index)) as client:
+        imported = _import_json(client)
+        source_id = imported["source"]["id"]
+
+    vector_index.sources.clear()
+    with TestClient(_create_app(settings, vector_index)) as client:
+        health = client.get("/api/health")
+        source = client.get(f"/api/sources/{source_id}").json()["source"]
+
+        assert health.status_code == 200
+        assert source["status"] == "failed"
+        assert source["error_code"] == "index_missing"
+        assert source["retryable"] is True
+
+        retried = client.post(f"/api/sources/{source_id}/retry")
+
+    assert retried.status_code == 200
+    assert retried.json()["source"]["status"] == "ready"
 
 
 def test_preview_returns_csv_headers_and_never_persists_a_source(tmp_path) -> None:

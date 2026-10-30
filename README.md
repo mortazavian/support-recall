@@ -99,7 +99,17 @@ If the embedding model changes, inspection and indexing return a Persian `reinde
 python -m uv run --project . python -m app.retrieval.reindex --confirm
 ```
 
-This command replaces the Chroma collection from ready SQLite sources. It leaves source rows and original uploads unchanged. Do not run it without `--confirm`.
+Sources imported before Stage 3 have no vectors. On startup, SupportRecall marks those sources as retryable without calling Ollama. The confirmed rebuild includes them and marks them ready after indexing succeeds.
+
+Stop the backend before rebuilding so requests do not arrive while the Chroma collection is being replaced. For local Windows runs, stop Terminal 1, run the command above from `backend/`, then start Terminal 1 again. With Compose:
+
+```powershell
+docker compose stop backend
+docker compose run --rm --no-deps backend python -m app.retrieval.reindex --confirm
+docker compose start backend
+```
+
+The rebuild replaces the Chroma collection from ready sources and sources marked `index_missing`. It leaves normalized source records and original uploads unchanged. Do not run it without `--confirm`.
 
 If an image pull fails because Docker Engine is configured to use an unreachable proxy, correct the proxy in Docker Desktop and restart its engine before retrying `docker compose up --build`.
 

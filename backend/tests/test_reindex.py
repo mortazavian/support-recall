@@ -110,6 +110,25 @@ def test_confirmed_reindex_rebuilds_all_ready_sources(tmp_path) -> None:
     assert index.collection.metadata["embedding_model"] == "current-model"
 
 
+def test_confirmed_reindex_includes_upgrade_sources_missing_vectors(tmp_path) -> None:
+    database_path, _ = _database(tmp_path, [("legacy-1", "failed")])
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "UPDATE sources SET error_code = 'index_missing' WHERE id = 'legacy-1'"
+        )
+    index = _index(tmp_path)
+
+    chunk_count = index.rebuild(database_path, confirmed=True)
+
+    with sqlite3.connect(database_path) as connection:
+        status, error_code = connection.execute(
+            "SELECT status, error_code FROM sources WHERE id = 'legacy-1'"
+        ).fetchone()
+    assert chunk_count == 1
+    assert status == "ready"
+    assert error_code is None
+
+
 def test_failed_reindex_keeps_sqlite_records_and_original_uploads(tmp_path) -> None:
     database_path, uploads_dir = _database(tmp_path, [("ready-1", "ready")])
     upload_path = uploads_dir / "ready-1.json"

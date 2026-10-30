@@ -14,7 +14,7 @@
 - Chroma persists vectors under `SUPPORTRECALL_VECTOR_DIR` (default `<data_dir>/vectors`). SQLite remains authoritative for sources and normalized records.
 - Imports and retries mark a source ready only after indexing succeeds. Provider failures keep the original upload and records and mark the source retryable. Source deletion removes vectors before records and uploads.
 - `POST /api/retrieval/inspect` returns up to 10 ranked, source-linked excerpts in Persian or English without generating an answer.
-- Model or dimension changes block indexing and inspection until an explicit `python -m app.retrieval.reindex --confirm` rebuild. The reindex command changes vectors only.
+- Model or dimension changes block indexing and inspection until an explicit `python -m app.retrieval.reindex --confirm` rebuild. Stage 2 sources missing vectors are detected at startup, marked retryable without contacting Ollama, and included in the confirmed rebuild.
 - `backend/tests/fixtures/retrieval_evaluation.json` provides synthetic Persian, English, and cross-language queries. The local model achieved recall@3 of 6/6 during the Stage 3 run.
 
 ## Stage 3 commits
@@ -22,15 +22,17 @@
 - `fde8f4a` - `feat: add Ollama embeddings and conversation chunking`
 - `f414292` - `feat: persist source-linked retrieval vectors`
 - `9d6f6ad` - `feat: add retrieval inspection and reindex safeguards`
-- Documentation and verification handoff is included in the current checkpoint.
+- `9a378a6` - `docs: complete Stage 3 retrieval handoff`
+- Review fixes for Chroma lifecycle and Stage 2 migration are included in the current checkpoint.
 
 ## Stage 3 verification
 
-- Backend: `python -m uv run --project . pytest -q` - 70 passed, with one Chroma deprecation warning. Ruff reported no issues.
+- Backend: `python -m uv run --project . pytest -q` - 76 passed, with one Chroma deprecation warning. Ruff reported no issues.
 - Dependency checks: `uv lock --check` resolved 95 packages; the regenerated requirements export matched `backend/requirements.lock`.
 - Retrieval evaluation: `embeddinggemma:latest` retrieved all six expected Persian, English, and cross-language conversations in the top three (recall@3: 6/6).
 - Compose: `docker compose config --quiet` passed and both backend and frontend images built successfully.
 - Manual API walkthrough: imported a two-conversation Persian/English JSON file; both queries returned the expected source-linked excerpts before and after a backend restart. With Ollama unavailable, `/api/health` returned 200 and inspection returned the Persian `embedding_unavailable` error. Deleting the source returned 204, and a later query returned no results.
+- Review regressions confirm dimension changes still require reindex after the last vector is deleted, active clients recover after collection replacement, failed-source vectors do not crowd out ready results, and pre-Stage 3 sources become retryable and can be restored by confirmed reindex.
 - Chroma adds a sizable runtime dependency set; the lock contains 95 packages, including ONNX Runtime and Kubernetes client dependencies.
 
 ## Stage 2 delivered
@@ -94,7 +96,7 @@ The Windows Computer Use bridge could not connect to its native pipe, so a scree
 4. Restart the backend and repeat both queries to confirm the Chroma vectors persist.
 5. Stop Ollama and confirm `/api/health` still returns 200 while inspection reports a Persian provider-unavailable error.
 6. Restart Ollama, delete the imported source, and confirm its vectors no longer appear in inspection results.
-7. Change the embedding model only with the explicit reindex command; confirm reindexing refuses to run without `--confirm`.
+7. Stop the backend before changing the embedding model. Run the explicit reindex command, confirm it refuses to run without `--confirm`, then restart the backend.
 
 ## Next stage
 
