@@ -1,6 +1,6 @@
 # Customization guide
 
-Stage 1 keeps the everyday changes in a few small files. UI labels are Persian-first, and request paths stay relative so the same browser build works in local development and Compose.
+Stage 2 keeps the everyday changes in a few small files. UI labels are Persian-first, and request paths stay relative so the same browser build works in local development and Compose.
 
 ## Change visible text
 
@@ -35,6 +35,10 @@ python -m uv run --directory backend --project . uvicorn app.main:app --reload -
 
 The database file is `supportrecall.sqlite3` inside that directory. In Compose, the environment path is `/app/data`; if you change it, update the `app-data` volume mount in `compose.yaml` to match. Do not remove the named volume when rebuilding containers.
 
+## Import formats
+
+The supported CSV, JSON, and plain-text schemas, including Persian text labels and validation behavior, are documented in [IMPORT_FORMATS.md](IMPORT_FORMATS.md). To change an accepted field or role, update `backend/app/imports/parsers.py`, that guide, the synthetic files in `frontend/public/samples/`, and the corresponding parser tests together. Keep the import limit and API/UI expectations aligned.
+
 ## Model and retrieval options
 
-Stage 1 does not implement model settings, prompts, imports, or retrieval. The Compose `OLLAMA_BASE_URL` is only a future connection setting; the current backend ignores it. Model, prompt, import-format, chunking, and retrieval customization will be documented when those features are implemented.
+Stage 2 does not implement model settings, prompts, or retrieval. The Compose `OLLAMA_BASE_URL` is only a future connection setting; the current backend ignores it. Model, prompt, chunking, and retrieval customization will be documented when those features are implemented.

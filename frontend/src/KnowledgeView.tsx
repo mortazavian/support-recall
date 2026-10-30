@@ -524,8 +524,8 @@ function formatDate(value: string): string {
 }
 
 function formatLabel(format: SourceSummary['format']): string {
-  if (format === 'csv') return 'CSV'
-  return format === 'json' ? 'JSON' : 'متن ساده'
+  if (format === 'csv') return strings.knowledge.formatCsv
+  return format === 'json' ? strings.knowledge.formatJson : strings.knowledge.formatText
 }
 
 function formatMark(format: SourceSummary['format']): string {

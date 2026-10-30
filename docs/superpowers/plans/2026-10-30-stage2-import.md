@@ -112,12 +112,13 @@
 ### Task 4: Document, review, and hand off Stage 2
 
 **Files:**
-- Modify: `README.md`, `docs/CODE_MAP.md`, `docs/PROGRESS.md`, `docs/STAGE_CHECKLIST.md`
+- Modify: `README.md`, `docs/CODE_MAP.md`, `docs/CUSTOMIZATION.md`, `docs/PROGRESS.md`, `docs/STAGE_CHECKLIST.md`
+- Modify: `frontend/Dockerfile` (copy public sample assets into the production build)
 - Modify: this plan file
 
-- [ ] Document the schemas, sample downloads, size limits, startup behavior, retry/delete workflow, and a manual Persian UI walkthrough.
-- [ ] Run the full backend/frontend test suites, Ruff, frontend lint/typecheck/build, dependency lock check, and `docker compose config --quiet`.
-- [ ] Run local API/UI smoke checks for preview, import, restart, duplicate import, retry, detail, and deletion.
-- [ ] Review diffs and record any Docker/browser checks blocked by environment limitations.
-- [ ] Update Stage 2 status only from observed results; leave Stage 3 unchecked.
-- [ ] Commit as `feat: complete Stage 2 source import`.
+- [x] Document the schemas, sample downloads, size limits, startup behavior, retry/delete workflow, and a manual Persian UI walkthrough.
+- [x] Run the full backend/frontend test suites, Ruff, frontend lint/typecheck/build, dependency lock check, and `docker compose config --quiet`.
+- [x] Run local API/UI smoke checks for preview, import, restart, duplicate import, retry, detail, and deletion; also verify the production Compose proxy and persistent volumes.
+- [x] Review diffs and record the unavailable screenshot-based browser walkthrough; Docker build/runtime checks passed after copying public sample assets into the frontend image.
+- [x] Update Stage 2 status from observed results; leave Stage 3 unchecked.
+- [x] Commit as `feat: complete Stage 2 source import`.
