@@ -86,7 +86,7 @@
 - [x] Add multipart upload handling, persistent upload storage, preview/import/source/retry/delete routes, and structured validation errors.
 - [x] Configure the existing Compose uploads volume and local environment path.
 - [x] Run source API tests and backend Ruff; require all passing.
-- [ ] Commit as `feat: persist and manage support sources`.
+- [x] Commit as `feat: persist and manage support sources`.
 
 ### Task 3: Build the Persian knowledge import and inspection UI
 
@@ -95,17 +95,19 @@
 - Modify: `frontend/src/api.ts`
 - Modify: `frontend/src/strings.ts`
 - Modify: `frontend/src/styles.css`
-- Test: `frontend/src/App.test.tsx`
+- Create: `frontend/src/KnowledgeView.tsx`
+- Test: `frontend/src/KnowledgeView.test.tsx`
+- Modify: `frontend/src/App.test.tsx`
 
 **Interfaces:**
 - API helpers expose preview, import, list/detail, retry, and delete operations using same-origin `/api` routes.
 - Knowledge view provides format/sample guidance, file selection, CSV column mapping, validation preview, explicit import confirmation, source status/counts, detail preview, retry, and confirmed deletion.
 
-- [ ] Add failing UI tests for Persian sample links, CSV mapping, preview/errors, import/list refresh, source details, retry, delete confirmation, and empty/loading states.
-- [ ] Run `npm.cmd --prefix frontend run test -- --reporter=dot` and confirm the new UI assertions fail.
-- [ ] Implement the knowledge workflow with keyboard-accessible labels and confirmation; keep all visible copy in `strings.ts` and every control functional.
-- [ ] Rerun frontend tests, lint, and typecheck; require all passing.
-- [ ] Commit as `feat: add Persian knowledge import workflow`.
+- [x] Add failing UI tests for Persian sample links, CSV mapping, preview/errors, import/list refresh, source details, retry, delete confirmation, and empty/loading states.
+- [x] Run `npm.cmd --prefix frontend run test -- --reporter=dot` and confirm the new UI assertions fail.
+- [x] Implement the knowledge workflow with keyboard-accessible labels and confirmation; keep all visible copy in `strings.ts` and every control functional.
+- [x] Rerun frontend tests, lint, and typecheck; require all passing.
+- [x] Commit as `feat: add Persian knowledge import workflow`.
 
 ### Task 4: Document, review, and hand off Stage 2
 

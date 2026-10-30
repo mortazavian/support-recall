@@ -8,7 +8,7 @@ const healthResponse = {
   service: 'supportrecall',
 }
 
-function response(body: typeof healthResponse) {
+function response<T>(body: T) {
   return {
     ok: true,
     json: async () => body,
@@ -75,7 +75,9 @@ describe('SupportRecall application shell', () => {
   })
 
   it('switches navigation views instead of leaving placeholder controls inert', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(healthResponse)))
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) =>
+      Promise.resolve(String(input) === '/api/sources' ? response([]) : response(healthResponse)),
+    ))
 
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'دانش‌ها' }))
